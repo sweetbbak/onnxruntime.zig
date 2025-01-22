@@ -10,7 +10,7 @@ const min_speech_duration_ms: f32 = 250;
 const max_silence_duration_ms: f32 = 100;
 
 inline fn srcDir() []const u8 {
-    return std.fs.path.dirname(@src().file).?;
+    return std.fs.path.dirname(@src()).?;
 }
 
 const InferenceState = struct {

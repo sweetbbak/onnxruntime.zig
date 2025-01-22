@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 const Allocator = std.mem.Allocator;
 
 /// API docs: https://onnxruntime.ai/docs/api/c/struct_ort_api.html
@@ -198,6 +199,29 @@ pub const OnnxInstance = struct {
         return value.?;
     }
 
+    /// Create a tensor
+    pub fn createTensor(
+        self: *Self,
+        comptime T: type,
+        data: []T,
+        shape: []const i64,
+        tensor_type: ONNXTensorElementDataType,
+    ) !*c_api.OrtValue {
+        var value: ?*c_api.OrtValue = null;
+        const status = self.ort_api.CreateTensorAsOrtValue.?(
+            self.mem_info.?,
+            data.ptr,
+            data.len * @sizeOf(T),
+            shape.ptr,
+            shape.len,
+            @intFromEnum(tensor_type),
+            &value,
+        );
+
+        try checkError(self.ort_api, status);
+        return value.?;
+    }
+
     pub fn run(self: *Self) !void {
         const status = self.ort_api.Run.?(
             self.session,
@@ -278,7 +302,140 @@ pub const OnnxInstance = struct {
         try checkError(ort_api, status);
         return run_opts.?;
     }
+
+    pub fn isTensor(
+        self: *Self,
+        tensor: ?*c_api.OrtValue,
+    ) !bool {
+        var is_tensor: c_int = -1;
+        const status = self.ort_api.IsTensor.?(tensor, &is_tensor);
+        try Error(self.ort_api, status);
+        return if (is_tensor == 1) true else false;
+    }
+
+    pub fn getTensorData(
+        self: *Self,
+        tensor: ?*c_api.OrtValue,
+        output_data: anytype,
+    ) !bool {
+        try Error(
+            self.ort_api,
+            self.ort_api.GetTensorMutableData.?(tensor, @ptrCast(&output_data)),
+        );
+    }
 };
+
+pub fn getTensorShapeCount(
+    allocator: Allocator,
+    ort_api: *const c_api.OrtApi,
+    tensor: ?*c_api.OrtValue,
+) !i64 {
+    var shape_info: ?*c_api.OrtTensorTypeAndShapeInfo = mem.zeroes(?*c_api.OrtTensorTypeAndShapeInfo);
+    try Error(
+        ort_api,
+        ort_api.GetTensorTypeAndShape.?(tensor, &shape_info),
+    );
+
+    var num_dims: usize = 0;
+    try Error(
+        ort_api,
+        ort_api.GetDimensionsCount.?(shape_info, &num_dims),
+    );
+
+    std.debug.print("num dims: {any}\n", .{num_dims});
+
+    var output_dims: []i64 = try allocator.alloc(i64, num_dims);
+    _ = &output_dims;
+    // var output_dims_c: *i64 = @ptrCast(&output_dims);
+    defer allocator.free(output_dims);
+
+    try Error(
+        ort_api,
+        ort_api.GetDimensions.?(shape_info, @ptrCast(output_dims.ptr), num_dims),
+    );
+    const thing = output_dims[output_dims.len - 1];
+    std.debug.print("output dims: {d}\n", .{thing});
+
+    return output_dims[output_dims.len - 1];
+}
+
+pub fn getTensorNumDims(
+    ort_api: *const c_api.OrtApi,
+    tensor: ?*c_api.OrtValue,
+) !usize {
+    var shape_info: ?*c_api.OrtTensorTypeAndShapeInfo = mem.zeroes(?*c_api.OrtTensorTypeAndShapeInfo);
+    try Error(
+        ort_api,
+        ort_api.GetTensorTypeAndShape.?(tensor, &shape_info),
+    );
+
+    var num_dims: usize = 0;
+    try Error(
+        ort_api,
+        ort_api.GetDimensionsCount.?(shape_info, &num_dims),
+    );
+
+    return num_dims;
+}
+
+pub fn getTensorElementCount(
+    allocator: Allocator,
+    ort_api: *const c_api.OrtApi,
+    tensor: ?*c_api.OrtValue,
+) !usize {
+    var shape_info: ?*c_api.OrtTensorTypeAndShapeInfo = mem.zeroes(?*c_api.OrtTensorTypeAndShapeInfo);
+    try Error(
+        ort_api,
+        ort_api.GetTensorTypeAndShape.?(tensor, &shape_info),
+    );
+
+    var num_dims: usize = 0;
+    try Error(
+        ort_api,
+        ort_api.GetDimensionsCount.?(shape_info, &num_dims),
+    );
+    std.debug.print("dims: {d}\n", .{num_dims});
+
+    var output_dims: []i64 = try allocator.alloc(i64, num_dims);
+    var output_dims_c: *i64 = @ptrCast(&output_dims);
+    defer allocator.free(output_dims);
+
+    try Error(
+        ort_api,
+        ort_api.GetDimensions.?(shape_info, @ptrCast(&output_dims_c), num_dims),
+    );
+    std.debug.print("output dims: {any}\n", .{output_dims});
+
+    var elem_count: usize = 0;
+    try Error(
+        ort_api,
+        ort_api.GetTensorShapeElementCount.?(shape_info, &elem_count),
+    );
+
+    var output_size: usize = 1;
+    for (num_dims, 0..) |_, i| {
+        std.debug.print("{d}\n", .{output_dims[i]});
+        output_size *= @intCast(output_dims[i]);
+    }
+
+    std.debug.print("shape element count: {d}\n", .{output_size});
+    ort_api.ReleaseTensorTypeAndShapeInfo.?(shape_info);
+    return output_size;
+}
+
+/// check an OrtStatus error
+pub fn Error(
+    ort_api: *const c_api.OrtApi,
+    onnx_status: ?*c_api.OrtStatus,
+) !void {
+    if (onnx_status == null) return;
+    defer ort_api.ReleaseStatus.?(onnx_status);
+
+    const msg = ort_api.GetErrorMessage.?(onnx_status);
+    std.debug.print("ONNX error: {s}\n", .{msg});
+
+    return error.OnnxError;
+}
 
 comptime {
     std.testing.refAllDecls(@This());
