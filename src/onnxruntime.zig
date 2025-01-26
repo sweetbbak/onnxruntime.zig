@@ -121,6 +121,18 @@ pub const OnnxInstance = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        // if (self.ort_inputs) |inputs| {
+        //     for (inputs) |input| {
+        //         self.ort_api.ReleaseValue.?(input);
+        //     }
+        // }
+        //
+        // if (self.ort_outputs) |outputs| {
+        //     for (outputs) |output| {
+        //         self.ort_api.ReleaseValue.?(output);
+        //     }
+        // }
+
         for (self.ort_inputs.?) |input| {
             self.ort_api.ReleaseValue.?(input);
         }
@@ -135,8 +147,14 @@ pub const OnnxInstance = struct {
         self.ort_api.ReleaseMemoryInfo.?(self.mem_info);
         self.ort_api.ReleaseEnv.?(self.ort_env);
 
-        self.allocator.free(self.ort_inputs.?);
-        self.allocator.free(self.ort_outputs.?);
+        if (self.ort_inputs) |inputs| {
+            self.allocator.free(inputs);
+        }
+
+        if (self.ort_outputs) |outputs| {
+            self.allocator.free(outputs);
+        }
+
         self.allocator.free(self.input_names);
         self.allocator.free(self.output_names);
         self.allocator.destroy(self);
@@ -169,8 +187,8 @@ pub const OnnxInstance = struct {
         inputs: []*c_api.OrtValue,
         outputs: []?*c_api.OrtValue,
     ) void {
-        if (self.ort_inputs != null) @panic("Inputs already set");
-        if (self.ort_outputs != null) @panic("Outputs already set");
+        // if (self.ort_inputs != null) @panic("Inputs already set");
+        // if (self.ort_outputs != null) @panic("Outputs already set");
 
         self.ort_inputs = inputs;
         self.ort_outputs = outputs;
