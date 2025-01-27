@@ -15,10 +15,13 @@ pub fn build(b: *std.Build) !void {
 
     b.getInstallStep().dependOn(&install_onnx_libs.step);
 
-    // rename shared object to libonnxruntime to avoid linking against system version
-    const lib = onnx_dep.path("lib/libonnxruntime.so.1.17.1");
-    const plugin_install = b.addInstallFileWithDir(lib, .lib, "libonnxruntime.so");
-    b.getInstallStep().dependOn(&plugin_install.step);
+    // copy and rename file
+    const install_onnx = b.addInstallLibFile(
+        onnx_dep.path("lib/libonnxruntime.so.1.17.1"),
+        "libonnxruntime.so",
+    );
+
+    b.getInstallStep().dependOn(&install_onnx.step);
 
     const lib_mod = b.addModule(
         "zig-onnxruntime",
@@ -39,4 +42,7 @@ pub fn build(b: *std.Build) !void {
         },
     );
     _ = onnx_lib_mod; // autofix
+
+    // add the shared object directly
+    lib_mod.addObjectFile(install_onnx.source);
 }
